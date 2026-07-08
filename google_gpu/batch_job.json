@@ -1,0 +1,38 @@
+{
+  "taskGroups": [
+    {
+      "taskCount": 1,
+      "parallelism": 1,
+      "taskSpec": {
+        "maxRetryCount": 1,
+        "maxRunDuration": "900s",
+        "computeResource": {
+          "cpuMilli": 12000,
+          "memoryMib": 83968
+        },
+        "runnables": [
+          {
+            "container": {
+              "imageUri": "__IMAGE_URI__",
+              "options": "--privileged"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "allocationPolicy": {
+    "instances": [
+      {
+        "installGpuDrivers": true,
+        "policy": {
+          "machineType": "a2-highgpu-1g",
+          "provisioningModel": "STANDARD"
+        }
+      }
+    ]
+  },
+  "logsPolicy": {
+    "destination": "CLOUD_LOGGING"
+  }
+}
