@@ -2,59 +2,130 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What this project does
+## Project objective (read this first)
 
-This is an LLM agent benchmark and training project for **HS Code classification** — given a product description, an LLM must navigate the Harmonized System hierarchy (Section → 2-digit chapter → 4-digit heading → 6-digit subheading) using tool calls and submit the correct 6-digit code.
+The real goal of this project is **not** to solve HS code classification. It is to **build and document a reusable toolbox of methods for making Small Language Models (SLMs) perform well on targeted, narrow tasks.**
 
-## Running inference
+The thesis: a small model (e.g. Qwen3-4B) that is cheap and runs locally can, with the right scaffolding — prompting, tool design, decoding strategies, agentic loops, verification passes, fine-tuning, etc. — approach or match a large frontier model on a *specific* task. We want to find out **which techniques buy how much performance, at what cost**, and to be able to **apply the winning combination to a new task quickly.**
 
-**Single episode (MLX, Apple Silicon):**
+HS code classification is simply the **first test bench**. It is a good one: it is a well-scoped, hierarchical, tool-navigation task with a clear correctness signal (the 6-digit answer) and a graded reward. But the point of every method we write is that it should generalize to the *next* task we throw at it.
+
+### Consequences of this objective — how to work here
+
+1. **A method that performs badly on HS codes is NOT a failure and must NOT be deleted.** It stays in the toolbox. We may have implemented it imperfectly, or it may simply not suit this particular task but shine on the next one. What matters is that we *tried it and recorded what happened.*
+
+2. **Every experiment must be documented in `EXPERIMENTS.md`** (the running experiment report — see below). The value of this repo compounds through that log: when we move to a new task, we replay the toolbox in roughly the order the log suggests, and we already know the trade-offs.
+
+3. **Methods should be written to generalize.** The task-specific bits (the environment, the tools, the dataset) are separable from the *technique* (self-consistency, verification, best-of-n, tree search, fine-tuning…). When you add a method, keep the technique cleanly reusable so it can be repointed at a new task's environment with minimal change.
+
+4. **We favor breadth then depth.** First get a broad, cheap read on many techniques (which are worth pursuing), then invest in tuning the promising ones.
+
+## Repository layout
+
+| Path | Role |
+|---|---|
+| `hscode_env.py` | The HS code task: `HSCodeEnv` (stateful tool-calling env + reward), `SYSTEM_PROMPT`, `TOOLS`. The "task bench." |
+| `methods/` | **The toolbox.** One file per technique. Each exposes `run(row) -> dict`. |
+| `papers/` | Research papers (PDFs / notes) to read and turn into methods. **Source of new toolbox entries.** |
+| `generic_benchmark.py` | Task-agnostic harness: `benchmark(fn)` scores any method's `run` over the dataset (accuracy + avg reward). |
+| `benchmark.py` | Sweeps the *local MLX baseline* across Qwen3-4B/8B/14B. Checkpoints per row; resumes. |
+| `run_hscode.py` | MLX (Apple Silicon) baseline backend — `run_episode()`, manual `<tool_call>` XML parsing. |
+| `grpo_hscode.py` | GRPO/QLoRA fine-tuning of Qwen3-4B on the env's reward (needs CUDA). A toolbox method that happens to be training-based. |
+| `google_gpu/` | Google Cloud Batch recipe for running GPU jobs (A100) — infra for the training-based methods. See its own README. |
+| `data/` | Datasets + per-model benchmark result CSVs. |
+| `EXPERIMENTS.md` | **The experiment report. Append to it after every experiment.** |
+
+## The toolbox: `methods/`
+
+Each method is one file exposing a single entry point with a stable signature:
+
+```python
+def run(row: dict) -> dict:
+    # row has: product_description, answer, hs_2, hs_4, section, trickiness
+    return {"submitted": ..., "reward": ..., "correct": bool, "steps": int}
+```
+
+Any method satisfying this contract is scorable by `generic_benchmark.py` with no changes to the harness. To benchmark a method, point the import in `generic_benchmark.py` at it and run `python generic_benchmark.py`.
+
+Methods present today (each is a technique, not just an HS-code hack):
+
+- `methods/raw_openai.py` — **baseline**: single agent, raw OpenAI tool-calling loop over `HSCodeEnv`. The reference point every other method is measured against.
+- `methods/self_consistency.py` — **self-consistency**: run the baseline *n* times at high temperature, majority-vote the submitted code.
+- `methods/inspect_submit.py` — **submit-then-verify**: a rebuilt env where `submit_final_code` is provisional and triggers a mandatory re-inspection pass over sibling branches before a terminal `finish`. Explores "give the model a chance to self-correct."
+
+When you add a method, keep the *technique* separable from the HS-code specifics so it can be repointed at a future task.
+
+## `papers/` → `methods/` workflow
+
+`papers/` holds research papers we want to try. The loop is:
+
+1. Read a paper in `papers/`.
+2. Implement the **simplest faithful version** of its core idea as a new file in `methods/` (respecting the `run(row)` contract). Simple first — a rough but honest implementation that we can benchmark beats a perfect one we never finish.
+3. Benchmark it via `generic_benchmark.py`.
+4. **Record the result in `EXPERIMENTS.md`** — regardless of whether it helped.
+
+If a paper is too heavy to implement simply, note that in `EXPERIMENTS.md` (what it would take, why deferred) rather than silently skipping it.
+
+## `EXPERIMENTS.md` — the experiment report (MANDATORY upkeep)
+
+**After every experiment you run, append an entry to `EXPERIMENTS.md`.** This is the single most important habit in this repo — it is what makes the toolbox reusable across tasks. Do not skip it, even for negative or inconclusive results (those are often the most valuable).
+
+Each entry should capture:
+- **Method** — which file / technique, and the paper it came from if any.
+- **Setup** — model(s), dataset slice, key hyperparameters (n, temperature, max_steps…), backend.
+- **Results** — accuracy, avg reward, and cost proxy (tool calls / steps, tokens, wall-clock, $ if API).
+- **Verdict** — did it beat the baseline? By how much, at what added cost?
+- **Notes for the next task** — would this technique likely transfer? Caveats, failure modes, ideas to try next.
+
+Keep older entries; never rewrite history. The report is append-only.
+
+**Keep `EXPERIMENTS.md` simple and easily readable by a human.** It is a lab
+notebook, not a data dump: short prose, small tables, plain numbers. Anyone
+should be able to skim it and understand what was tried and what happened without
+running any code. Favor clarity over exhaustiveness — if raw output is bulky, put
+it in `data/` and link to it rather than pasting it in.
+
+## Running things
+
+**Benchmark any toolbox method (task-agnostic harness):**
+```bash
+python generic_benchmark.py   # edit the import to select the method
+```
+
+**Local MLX baseline, single episode (Apple Silicon):**
 ```bash
 python run_hscode.py
 ```
 
-**Full benchmark across Qwen3-4B/8B/14B MLX models:**
+**Sweep the MLX baseline across Qwen3-4B/8B/14B (checkpoints, resumable):**
 ```bash
 python benchmark.py
 ```
-The benchmark checkpoints after every row — re-running resumes from where it left off.
 
-**Parallel episodes via vLLM server (requires a model served at `localhost:8000`):**
-```bash
-python qwen_hscode_agent.py
-```
-
-**GRPO fine-tuning (requires CUDA + BitsAndBytes):**
+**GRPO fine-tuning (training-based method, needs CUDA + BitsAndBytes):**
 ```bash
 python grpo_hscode.py
 ```
 
-## Architecture
+## The HS code task bench: `hscode_env.py`
 
-### Core environment: `hscode_env.py`
-`HSCodeEnv` is the stateful tool-calling environment. It exposes three tools to the LLM:
-- `search_section_children(section_letter)` — lists 2-digit chapters in a section
-- `search_code_children(code)` — lists children of a 2- or 4-digit code
-- `submit_final_code(code)` — locks in the 6-digit answer
+`HSCodeEnv` is the stateful tool-calling environment for the first task. Tools exposed to the model:
+- `search_section_children(section_letter)` — 2-digit chapters in a section (A–U).
+- `search_code_children(code)` — children of a 2- or 4-digit code.
+- `submit_final_code(code)` — lock in the 6-digit answer.
 
-**Key constraint**: codes are only valid to search/submit if they were previously returned by a tool call. The env enforces this — no hallucinating codes. It also tracks a `reward` score (positive for correct navigation/submission, negative per tool call) used as the GRPO training signal.
+**Key constraint**: a code is only valid to search or submit if a prior tool call returned it — the env forbids hallucinated codes. The env also tracks a graded `reward` (positive for correct navigation and submission, negative per tool call to penalize wandering) that doubles as the GRPO training signal.
 
-### Two inference backends
+### Data (`data/`)
+- `harmonized_system_by_parent.csv` — the HS tree indexed by parent group; queried live during episodes.
+- `sections_prepared.csv` — section letters (A–U) → names; injected into the system prompt.
+- `benchmark_dataset.csv` — columns: `product_description`, `answer` (6-digit), `hs_2`, `hs_4`, `section`, `trickiness`.
+- `benchmark_<model>.csv` — per-model results from `benchmark.py`.
 
-| File | Backend | Use case |
-|---|---|---|
-| `run_hscode.py` | `mlx_lm` (Apple Silicon) | Local dev/benchmark |
-| `qwen_hscode_agent.py` | `qwen-agent` + vLLM server | Parallel/server inference |
+## Adding a new task (the eventual goal)
 
-Both implement `run_episode()` with the same signature and return dict (`submitted`, `reward`, `correct`, `steps`, `messages`). They share `HSCodeEnv` and `SYSTEM_PROMPT` from `hscode_env.py`.
-
-`run_hscode.py` manually parses `<tool_call>...</tool_call>` XML tags from raw model output; `qwen_hscode_agent.py` delegates tool dispatch to the `qwen-agent` library.
-
-### Data files (`data/`)
-- `harmonized_system_by_parent.csv` — the HS code tree, indexed by parent group; used live during episodes
-- `sections_prepared.csv` — section letters (A–U) to names; injected into the system prompt
-- `benchmark_dataset.csv` — benchmark set with `product_description`, `answer` (6-digit), `hs_2`, `hs_4`, `section`, `trickiness`
-- `benchmark_<model>.csv` — per-model benchmark results written by `benchmark.py`
-
-### GRPO training: `grpo_hscode.py`
-Uses TRL's `GRPOTrainer` with `HSCodeEnv` passed as `environment_factory`. The reward function reads `env.reward` directly after each generation. Requires a separate `data/HSCode_full.csv` (not the benchmark set). Targets CUDA with 4-bit QLoRA on `Qwen/Qwen3-4B`.
+When HS codes are exhausted and we move to a new task, the pattern to follow:
+1. Write a new task bench (the analog of `hscode_env.py`) — its data, tools, and a correctness/reward signal.
+2. Repoint the toolbox methods at it (they should need only their task-specific env swapped).
+3. Replay the toolbox, guided by `EXPERIMENTS.md`, starting with whatever transferred best on prior tasks.
+4. Log everything back into `EXPERIMENTS.md`.
