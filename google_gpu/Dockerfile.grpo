@@ -1,0 +1,27 @@
+# GRPO/QLoRA fine-tuning of Qwen3-4B on the HS-code env reward, for 1x A100 40GB.
+# Base image already ships torch built against CUDA 12.1 (A100-supported).
+FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+
+# Unbuffered stdout so training logs stream to Cloud Logging in real time.
+ENV PYTHONUNBUFFERED=1
+ENV HF_HUB_ENABLE_HF_TRANSFER=1
+
+# Heavy deps. TRL is installed from git main because GRPOTrainer's
+# environment_factory (per-rollout stateful env + env-owned reward) is only on
+# main, not in the stable release yet. transformers>=4.51 is needed for Qwen3.
+RUN pip install --no-cache-dir --upgrade \
+      "transformers>=4.51" \
+      "accelerate>=0.34" \
+      "datasets>=2.20" \
+      "peft>=0.13" \
+      "bitsandbytes>=0.43" \
+      "hf_transfer" \
+      "git+https://github.com/huggingface/trl.git"
+
+# Build context is the repo root (see cloudbuild.grpo.yaml), so these paths are
+# relative to the project root.
+WORKDIR /app
+COPY hscode_env.py grpo_hscode.py ./
+COPY data/harmonized_system_by_parent.csv data/sections_prepared.csv data/benchmark_dataset.csv ./data/
+
+CMD ["python", "-u", "grpo_hscode.py"]

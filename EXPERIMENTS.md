@@ -63,6 +63,7 @@ task.
 | Agentic baseline (raw tool-calling) | `methods/raw_openai.py` | implemented | 72.2% (GPT-5-nano, n=90) |
 | Self-consistency (majority vote) | `methods/self_consistency.py` | implemented | 75.6% (GPT-5-nano, 5 votes, n=90) |
 | Submit-then-verify (self-critique) | `methods/inspect_submit.py` | implemented | no gain yet |
+| Self-Refine (feedback→refine loop) | `methods/self_refine.py` | implemented | 81.1% (GPT-5-nano, n=90) |
 | DSPy GEPA (prompt optimization) | _not in repo_ | tried | marginal, dropped |
 | Local MLX agentic (Qwen3 4B/8B/14B) | `run_hscode.py` + `benchmark.py` | implemented | 90% (14B, n=20) |
 | GRPO / QLoRA fine-tuning | `grpo_hscode.py` | implemented | not yet run |
@@ -148,3 +149,38 @@ Keep this table in sync as methods are added and benchmarked.
   alternative branches before allowing `finish`; use a *separate* critic model or
   a higher-temperature critic; make the critique compare concrete sibling codes
   rather than re-reason freely.
+
+### 2026-07-21 — Self-Refine (feedback → refine loop)
+
+- **Method / technique:** Self-Refine (Madaan et al., 2023, arXiv:2303.17651),
+  `methods/self_refine.py`. One agentic episode generates a code; the *same* model
+  critiques it (naming concrete sibling/branch alternatives + a STOP flag); a fresh
+  episode re-navigates from scratch guided by the full history of prior attempts +
+  feedback. Loop until STOP: yes or max_iters.
+- **Setup:** GPT-5-nano, 90 examples, `max_iters=3`, `max_steps=15`, temperature=1
+  (see caveat), backend = OpenAI chat-completions + `HSCodeEnv` tools.
+- **Results:** accuracy = **81.1%**, avg reward = 12.67. Cost proxy: up to 1
+  generate + 3×(feedback + refine episode) LLM roundtrips per row — the most
+  expensive OpenAI method tried so far (each refine is a full fresh episode, not a
+  continuation), though the STOP flag ends many rows after iteration 1.
+- **Baseline compared to:** GPT-5-nano agentic baseline 72.2%; self-consistency
+  (5 votes) 75.6%.
+- **Verdict:** **best OpenAI-method result to date — +8.9 pts over baseline, +5.5
+  over self-consistency.** Structured feedback that names concrete alternatives and
+  then *re-navigates from the start* beats both raw retries and the earlier
+  submit-then-verify self-critique — which is telling: the earlier method (which
+  showed no gain) let the model validate its existing trace, whereas Self-Refine
+  forces a clean re-navigation acting on specific critique. Forcing a fresh start
+  seems to be what breaks the "no hindsight" failure mode of small/cheap models.
+- **Caveat (comparability):** gpt-5-nano now rejects `temperature != 1`, so this
+  run used temperature=1 for both the episodes and the feedback. The baseline /
+  self-consistency numbers in this log predate that constraint (baseline default
+  was 0.3). Treat the +8.9 pt delta as indicative, not perfectly matched; a
+  temperature=1 re-run of the baseline would tighten the comparison.
+- **Transferability / notes:** highly general — three prompts, no training, works
+  on any task with a self-checkable output. Key design lesson for the next task:
+  **make refinement a fresh attempt guided by specific, alternative-naming feedback
+  rather than an in-place patch of the prior trace.** Next ideas: use a separate /
+  stronger critic model for the feedback step; measure how often STOP fires early
+  vs. burning all 3 iters; ablate the "re-navigate from scratch" choice against
+  continuing the same trace to confirm it's the active ingredient.

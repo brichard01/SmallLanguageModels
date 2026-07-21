@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import random
 import torch
@@ -45,7 +46,18 @@ def build_grpo_row(row):
 
 
 if __name__ == "__main__":
-    hscode_dataset = pd.read_csv("data/HSCode_full.csv")
+    # Data path is configurable so the same script serves the full training set
+    # (data/HSCode_full.csv) or the small benchmark set used as a smoke test.
+    data_path = os.environ.get("GRPO_DATA", "data/HSCode_full.csv")
+    # Read code columns as strings so leading zeros (e.g. "0709") survive.
+    hscode_dataset = pd.read_csv(data_path, dtype=str)
+
+    # Normalize schema: build_grpo_row expects hs_6 / section_letter, while the
+    # benchmark dataset names those columns answer / section.
+    if "hs_6" not in hscode_dataset.columns and "answer" in hscode_dataset.columns:
+        hscode_dataset["hs_6"] = hscode_dataset["answer"]
+    if "section_letter" not in hscode_dataset.columns and "section" in hscode_dataset.columns:
+        hscode_dataset["section_letter"] = hscode_dataset["section"]
     hscode_dataset.hs_6 = hscode_dataset.hs_6.astype(str)
 
     rows = hscode_dataset.to_dict("records")
@@ -95,7 +107,7 @@ if __name__ == "__main__":
     )
 
     grpo_config = GRPOConfig(
-        output_dir="./qwen3-4b-hscode-grpo-qlora",
+        output_dir=os.environ.get("GRPO_OUTPUT_DIR", "./qwen3-4b-hscode-grpo-qlora"),
 
         per_device_train_batch_size=1,
         gradient_accumulation_steps=8,
@@ -134,3 +146,7 @@ if __name__ == "__main__":
     )
 
     trainer.train()
+
+    # Persist the trained LoRA adapter. On Cloud Batch the VM is torn down after
+    # the job, so output_dir should point at a mounted GCS volume (GRPO_OUTPUT_DIR).
+    trainer.save_model(grpo_config.output_dir)

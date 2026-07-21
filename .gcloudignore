@@ -1,0 +1,10 @@
+# Keep the Cloud Build upload lean: only ship what the image actually COPYs.
+.git/
+__pycache__/
+*.pyc
+papers/
+methods/
+google_gpu/.claude/
+# per-model benchmark result CSVs are large and not used by training
+data/benchmark_Qwen*.csv
+*.md

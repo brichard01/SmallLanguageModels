@@ -1,0 +1,17 @@
+# Cloud Build config so we can build with the repo root as context (to pull in
+# grpo_hscode.py, hscode_env.py and data/) while keeping the Dockerfile in
+# google_gpu/. Invoked by submit_grpo.sh from the repo root.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_IMAGE_URI}
+      - -f
+      - google_gpu/Dockerfile.grpo
+      - .
+images:
+  - ${_IMAGE_URI}
+options:
+  machineType: E2_HIGHCPU_8
+timeout: 2400s

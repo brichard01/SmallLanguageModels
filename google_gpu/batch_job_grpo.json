@@ -1,0 +1,53 @@
+{
+  "taskGroups": [
+    {
+      "taskCount": 1,
+      "parallelism": 1,
+      "taskSpec": {
+        "maxRetryCount": 0,
+        "maxRunDuration": "10800s",
+        "computeResource": {
+          "cpuMilli": 12000,
+          "memoryMib": 83968
+        },
+        "volumes": [
+          {
+            "gcs": { "remotePath": "__BUCKET__/grpo-out" },
+            "mountPath": "/mnt/out"
+          }
+        ],
+        "runnables": [
+          {
+            "container": {
+              "imageUri": "__IMAGE_URI__",
+              "options": "--privileged"
+            },
+            "environment": {
+              "variables": {
+                "GRPO_DATA": "data/benchmark_dataset.csv",
+                "GRPO_OUTPUT_DIR": "/mnt/out"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "allocationPolicy": {
+    "instances": [
+      {
+        "installGpuDrivers": true,
+        "policy": {
+          "machineType": "a2-highgpu-1g",
+          "provisioningModel": "STANDARD",
+          "bootDisk": {
+            "sizeGb": 150
+          }
+        }
+      }
+    ]
+  },
+  "logsPolicy": {
+    "destination": "CLOUD_LOGGING"
+  }
+}

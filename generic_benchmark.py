@@ -16,6 +16,7 @@ def benchmark(fn, path="data/benchmark_dataset.csv", workers=8):
 
 if __name__ == "__main__":
     #from methods.raw_openai import run
-    from methods.self_consistency import run
+    #from methods.self_consistency import run
     #from methods.inspect_submit import run
+    from methods.self_refine import run
     benchmark(run)
