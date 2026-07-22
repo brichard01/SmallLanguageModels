@@ -25,19 +25,23 @@ HS code classification is simply the **first test bench**. It is a good one: it 
 | Path | Role |
 |---|---|
 | `hscode_env.py` | The HS code task: `HSCodeEnv` (stateful tool-calling env + reward), `SYSTEM_PROMPT`, `TOOLS`. The "task bench." |
-| `methods/` | **The toolbox.** One file per technique. Each exposes `run(row) -> dict`. |
+| `inference_methods/` | **The inference toolbox.** One file per prompting/decoding/agentic technique. Each exposes `run(row) -> dict`. |
+| `training_methods/` | **The training toolbox.** Fine-tuning-based techniques (GRPO, etc.) that train on the env's reward. |
 | `papers/` | Research papers (PDFs / notes) to read and turn into methods. **Source of new toolbox entries.** |
 | `generic_benchmark.py` | Task-agnostic harness: `benchmark(fn)` scores any method's `run` over the dataset (accuracy + avg reward). |
 | `benchmark.py` | Sweeps the *local MLX baseline* across Qwen3-4B/8B/14B. Checkpoints per row; resumes. |
 | `run_hscode.py` | MLX (Apple Silicon) baseline backend — `run_episode()`, manual `<tool_call>` XML parsing. |
-| `grpo_hscode.py` | GRPO/QLoRA fine-tuning of Qwen3-4B on the env's reward (needs CUDA). A toolbox method that happens to be training-based. |
+| `training_methods/grpo_hscode.py` | GRPO/QLoRA fine-tuning of Qwen3-4B on the env's reward (needs CUDA). A training-based method. |
 | `google_gpu/` | Google Cloud Batch recipe for running GPU jobs (A100) — infra for the training-based methods. See its own README. |
 | `data/` | Datasets + per-model benchmark result CSVs. |
 | `EXPERIMENTS.md` | **The experiment report. Append to it after every experiment.** |
 
-## The toolbox: `methods/`
+## The toolbox: `inference_methods/` and `training_methods/`
 
-Each method is one file exposing a single entry point with a stable signature:
+Inference-time techniques (prompting, decoding, agentic loops, verification) live
+in `inference_methods/`; training-based techniques (fine-tuning on the env
+reward) live in `training_methods/`. Each inference method is one file exposing a
+single entry point with a stable signature:
 
 ```python
 def run(row: dict) -> dict:
@@ -49,18 +53,20 @@ Any method satisfying this contract is scorable by `generic_benchmark.py` with n
 
 Methods present today (each is a technique, not just an HS-code hack):
 
-- `methods/raw_openai.py` — **baseline**: single agent, raw OpenAI tool-calling loop over `HSCodeEnv`. The reference point every other method is measured against.
-- `methods/self_consistency.py` — **self-consistency**: run the baseline *n* times at high temperature, majority-vote the submitted code.
-- `methods/inspect_submit.py` — **submit-then-verify**: a rebuilt env where `submit_final_code` is provisional and triggers a mandatory re-inspection pass over sibling branches before a terminal `finish`. Explores "give the model a chance to self-correct."
+- `inference_methods/raw_openai.py` — **baseline**: single agent, raw OpenAI tool-calling loop over `HSCodeEnv`. The reference point every other method is measured against.
+- `inference_methods/self_consistency.py` — **self-consistency**: run the baseline *n* times at high temperature, majority-vote the submitted code.
+- `inference_methods/inspect_submit.py` — **submit-then-verify**: a rebuilt env where `submit_final_code` is provisional and triggers a mandatory re-inspection pass over sibling branches before a terminal `finish`. Explores "give the model a chance to self-correct."
+- `inference_methods/self_refine.py` — **Self-Refine**: one agentic episode produces a code, then the same model critiques and refines it in a feedback→refine loop.
+- `training_methods/grpo_hscode.py` — **GRPO/QLoRA fine-tuning**: trains Qwen3-4B on the env's graded reward (needs CUDA; run via `google_gpu/`).
 
 When you add a method, keep the *technique* separable from the HS-code specifics so it can be repointed at a future task.
 
-## `papers/` → `methods/` workflow
+## `papers/` → `inference_methods/` / `training_methods/` workflow
 
 `papers/` holds research papers we want to try. The loop is:
 
 1. Read a paper in `papers/`.
-2. Implement the **simplest faithful version** of its core idea as a new file in `methods/` (respecting the `run(row)` contract). Simple first — a rough but honest implementation that we can benchmark beats a perfect one we never finish.
+2. Implement the **simplest faithful version** of its core idea as a new file in `inference_methods/` (respecting the `run(row)` contract) or `training_methods/` if it's training-based. Simple first — a rough but honest implementation that we can benchmark beats a perfect one we never finish.
 3. Benchmark it via `generic_benchmark.py`.
 4. **Record the result in `EXPERIMENTS.md`** — regardless of whether it helped.
 
@@ -104,7 +110,9 @@ python benchmark.py
 
 **GRPO fine-tuning (training-based method, needs CUDA + BitsAndBytes):**
 ```bash
-python grpo_hscode.py
+python -m training_methods.grpo_hscode        # locally, from the repo root
+# or on an A100 via Google Cloud Batch:
+PROJECT_ID=<proj> ./google_gpu/submit_grpo.sh
 ```
 
 ## The HS code task bench: `hscode_env.py`

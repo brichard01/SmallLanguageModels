@@ -18,7 +18,7 @@ bottom). Do not edit or delete past entries.
 ```markdown
 ### <YYYY-MM-DD> — <method name>
 
-- **Method / technique:** <file in methods/, and the paper if any>
+- **Method / technique:** <file in inference_methods/, and the paper if any>
 - **Setup:** model(s), dataset slice, hyperparams (n, temperature, max_steps…), backend
 - **Results:** accuracy = __%, avg reward = __, cost = __ (steps/tokens/wall-clock/$)
 - **Baseline compared to:** <which run, its accuracy>
@@ -60,13 +60,13 @@ task.
 
 | Method | File | Status | Best result so far |
 |---|---|---|---|
-| Agentic baseline (raw tool-calling) | `methods/raw_openai.py` | implemented | 72.2% (GPT-5-nano, n=90) |
-| Self-consistency (majority vote) | `methods/self_consistency.py` | implemented | 75.6% (GPT-5-nano, 5 votes, n=90) |
-| Submit-then-verify (self-critique) | `methods/inspect_submit.py` | implemented | no gain yet |
-| Self-Refine (feedback→refine loop) | `methods/self_refine.py` | implemented | 81.1% (GPT-5-nano, n=90) |
+| Agentic baseline (raw tool-calling) | `inference_methods/raw_openai.py` | implemented | 72.2% (GPT-5-nano, n=90) |
+| Self-consistency (majority vote) | `inference_methods/self_consistency.py` | implemented | 75.6% (GPT-5-nano, 5 votes, n=90) |
+| Submit-then-verify (self-critique) | `inference_methods/inspect_submit.py` | implemented | no gain yet |
+| Self-Refine (feedback→refine loop) | `inference_methods/self_refine.py` | implemented | 81.1% (GPT-5-nano, n=90) |
 | DSPy GEPA (prompt optimization) | _not in repo_ | tried | marginal, dropped |
 | Local MLX agentic (Qwen3 4B/8B/14B) | `run_hscode.py` + `benchmark.py` | implemented | 90% (14B, n=20) |
-| GRPO / QLoRA fine-tuning | `grpo_hscode.py` | implemented | not yet run |
+| GRPO / QLoRA fine-tuning | `training_methods/grpo_hscode.py` | implemented | not yet run |
 
 Keep this table in sync as methods are added and benchmarked.
 
@@ -114,7 +114,7 @@ Keep this table in sync as methods are added and benchmarked.
 ### GPT-5-nano agentic baseline (n=90)
 
 - **Method / technique:** agentic baseline, raw tool-calling loop
-  (`methods/raw_openai.py`).
+  (`inference_methods/raw_openai.py`).
 - **Setup:** GPT-5-nano, 90 examples, single completion.
 - **Results:** accuracy = 72.2%.
 - **Verdict:** the reference point that self-consistency and self-critique below
@@ -125,7 +125,7 @@ Keep this table in sync as methods are added and benchmarked.
 ### Self-consistency — majority vote (n=90)
 
 - **Method / technique:** run the baseline n times at temperature > 0, majority-
-  vote the submitted code (`methods/self_consistency.py`).
+  vote the submitted code (`inference_methods/self_consistency.py`).
 - **Setup:** GPT-5-nano, 5 completions, temp > 0, 90 examples.
 - **Results:** accuracy = 75.6% (vs 72.2% baseline).
 - **Verdict:** modest but real gain (+3.4 pts) at ~5× inference cost. Works by
@@ -137,7 +137,7 @@ Keep this table in sync as methods are added and benchmarked.
 ### Iterative self-critique — submit-then-verify
 
 - **Method / technique:** after a submission, systematically ask the model to
-  explore alternative branches before finalizing (`methods/inspect_submit.py`).
+  explore alternative branches before finalizing (`inference_methods/inspect_submit.py`).
 - **Setup:** GPT-5-nano, agentic.
 - **Results:** no improvement to note so far.
 - **Verdict:** inconclusive / no gain yet. The model tends to systematically
@@ -153,7 +153,7 @@ Keep this table in sync as methods are added and benchmarked.
 ### 2026-07-21 — Self-Refine (feedback → refine loop)
 
 - **Method / technique:** Self-Refine (Madaan et al., 2023, arXiv:2303.17651),
-  `methods/self_refine.py`. One agentic episode generates a code; the *same* model
+  `inference_methods/self_refine.py`. One agentic episode generates a code; the *same* model
   critiques it (naming concrete sibling/branch alternatives + a STOP flag); a fresh
   episode re-navigates from scratch guided by the full history of prior attempts +
   feedback. Loop until STOP: yes or max_iters.

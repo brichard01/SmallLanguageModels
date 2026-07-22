@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end: build a GRPO training image (repo root as build context), push to
 # Artifact Registry, ensure a GCS output bucket exists, then submit a Cloud Batch
-# job that runs grpo_hscode.py on 1x A100 40GB (a2-highgpu-1g) and writes the
+# job that runs training_methods/grpo_hscode.py on 1x A100 40GB (a2-highgpu-1g) and writes the
 # trained LoRA adapter to gs://$BUCKET/grpo-out.
 #
 # Run from the repo root:
@@ -43,7 +43,7 @@ gcloud storage buckets create "gs://${BUCKET}" \
   --location="${REGION}" --project="${PROJECT_ID}" 2>/dev/null || true
 
 # 3. Build + push with Cloud Build, using the repo root as build context so the
-#    image can COPY grpo_hscode.py, hscode_env.py and data/.
+#    image can COPY training_methods/grpo_hscode.py, hscode_env.py and data/.
 ( cd "${ROOT}" && gcloud builds submit \
     --project="${PROJECT_ID}" \
     --config=google_gpu/cloudbuild.grpo.yaml \

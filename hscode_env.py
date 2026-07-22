@@ -84,6 +84,11 @@ class HSCodeEnv:
         return None
 
     def search_section_children(self, section_letter: str) -> str:
+        """Search the 2-digit chapter codes contained in a section.
+
+        Args:
+            section_letter: Capital letter of a section (A-U).
+        """
         if self.submitted is not None:
             return "Submission already made. Classification complete, no further tool calls needed."
         self.total_calls += 1
@@ -101,6 +106,11 @@ class HSCodeEnv:
         return f'The child codes under section {section_letter} are :\n' + result.aggregate_concat.item()
 
     def search_code_children(self, code: str) -> str:
+        """Search the child codes of a 2-digit or 4-digit code.
+
+        Args:
+            code: String code (2 or 4 digits).
+        """
         if self.submitted is not None:
             return "Submission already made. Classification complete, no further tool calls needed."
         self.total_calls += 1
@@ -125,6 +135,11 @@ class HSCodeEnv:
         return f"The child codes under code {code} are:\n" + result.aggregate_concat.item()
 
     def submit_final_code(self, code: str) -> str:
+        """Submit the final correct 6-digit code.
+
+        Args:
+            code: String code (6 digits).
+        """
         if self.submitted is not None:
             return "Code already submitted. Classification complete, do not call any more tools."
         self.total_calls += 1

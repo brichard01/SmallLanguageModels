@@ -13,7 +13,7 @@
         "volumes": [
           {
             "gcs": { "remotePath": "__BUCKET__/grpo-out" },
-            "mountPath": "/mnt/out"
+            "mountPath": "/mnt/disks/out"
           }
         ],
         "runnables": [
@@ -25,7 +25,7 @@
             "environment": {
               "variables": {
                 "GRPO_DATA": "data/benchmark_dataset.csv",
-                "GRPO_OUTPUT_DIR": "/mnt/out"
+                "GRPO_OUTPUT_DIR": "/mnt/disks/out"
               }
             }
           }

@@ -7,7 +7,7 @@ from hscode_env import HSCodeEnv, SYSTEM_PROMPT, TOOLS
 client = OpenAI()
 
 
-def run(row, model="gpt-5-nano", temperature=0.3, max_steps=15):
+def run(row, model="gpt-5-nano", temperature=1, max_steps=15):
     env = HSCodeEnv()
     env.reset(answer=row["answer"], hs_2=row["hs_2"], hs_4=row["hs_4"], section=row["section"])
 
