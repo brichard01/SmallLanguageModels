@@ -184,3 +184,57 @@ Keep this table in sync as methods are added and benchmarked.
   stronger critic model for the feedback step; measure how often STOP fires early
   vs. burning all 3 iters; ablate the "re-navigate from scratch" choice against
   continuing the same trace to confirm it's the active ingredient.
+
+### 2026-07-23 — Infra: whole-model evaluation harness (`benchmarks/eval_vllm.py`)
+
+- **Not a scored experiment — an infra/tooling entry.** New harness to benchmark
+  *any* Hugging Face open-weights model on the HS-code bench, end to end, on the
+  Google Cloud A100. Same agentic `HSCodeEnv` loop as the rest of the toolbox, but
+  driven by a local vLLM engine instead of an API. Simpler than
+  `distill_generate.py`: no top-k logprobs / per-token bookkeeping — it keeps only
+  the **completions** (full per-episode conversation + submitted code, reward,
+  correct, steps) and pushes them to the Hub as `hscode-eval-<model>`.
+- **Model is a runtime arg** (`--model <hf-id>` / `MODEL=` in `submit_eval.sh`), so
+  a new checkpoint needs no image rebuild; `SKIP_BUILD=1` reuses the pushed image
+  and just submits a fresh job.
+- **Reasoning toggle:** `--keep-reasoning` keeps `<think>` blocks in the saved
+  transcript and the re-fed context; default strips them (standard multi-turn
+  convention of not carrying prior CoT forward). `--no-thinking` disables the
+  model's thinking mode in the chat template entirely.
+- **Files:** `benchmarks/eval_vllm.py` + `google_gpu/{Dockerfile.eval,
+  cloudbuild.eval.yaml, batch_job_eval.json, submit_eval.sh}`. Run:
+  `PROJECT_ID=<proj> MODEL=Qwen/Qwen3-4B ./google_gpu/submit_eval.sh`.
+- **Notes for the next task:** fully task-agnostic except the `hscode_env` import
+  and the `data/` files bundled into the image — repoint those and the harness
+  benchmarks a new bench's models unchanged. No results yet; first runs to follow.
+
+### 2026-07-23 — Qwen3-4B-AWQ eval: reasoning kept vs. stripped from the conversation
+
+- **Method:** `benchmarks/eval_vllm.py` (whole-model vLLM eval) on the A100 via
+  `google_gpu/submit_eval.sh`. Two runs of the same model, differing only in
+  whether prior-turn `<think>` blocks are carried forward in the multi-turn
+  conversation.
+- **Setup:** model `Qwen/Qwen3-4B-AWQ` (`--quantization awq_marlin`), full dataset
+  (99 rows), temperature 0.7, top-p 0.8, max-turns 12, max-model-len 16384,
+  pool-size 64. **Thinking was ON in both runs** — the model generates a `<think>`
+  block every turn regardless; the variable is only whether that reasoning stays
+  visible in the conversation re-fed on subsequent turns.
+- **Results:**
+
+  | Reasoning in conversation | Accuracy | Avg reward |
+  |---|---|---|
+  | kept (`--keep-reasoning`)          | **42.4%** (42/99) | 8.05 |
+  | stripped (prompts + non-reasoning output + tool responses) | 28.3% (28/99) | 5.98 |
+
+- **Verdict:** keeping prior-turn chain-of-thought in the conversation is worth
+  **+14.1 accuracy points (+2.07 reward)** for this agentic tool-calling task. Big
+  effect for a free change. (Note: not directly comparable to the OpenAI-backend
+  numbers elsewhere in this log — different model, backend, and full 99-row slice.)
+- **Completions on HF:** `brichard01/hscode-eval-qwen3-4b-awq-reasoning` and
+  `…-noreasoning` (one row per episode: full transcript + submitted/reward/correct).
+- **Notes for the next task:** for multi-turn agentic tasks, *carrying reasoning
+  forward* looks like a strong, cheap default — the model needs to see its own
+  earlier deductions to keep navigating a hierarchy. The usual "strip prior CoT"
+  convention hurt here. Worth re-testing on any new agentic bench before deciding.
+  Caveat: AWQ Qwen3-4B at 42% is well below the gpt-5-nano agentic baseline (72%);
+  this pair isolates the reasoning-retention axis, not absolute SLM quality.

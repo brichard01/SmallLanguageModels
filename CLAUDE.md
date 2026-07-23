@@ -28,8 +28,8 @@ HS code classification is simply the **first test bench**. It is a good one: it 
 | `inference_methods/` | **The inference toolbox.** One file per prompting/decoding/agentic technique. Each exposes `run(row) -> dict`. |
 | `training_methods/` | **The training toolbox.** Fine-tuning-based techniques (GRPO, etc.) that train on the env's reward. |
 | `papers/` | Research papers (PDFs / notes) to read and turn into methods. **Source of new toolbox entries.** |
-| `generic_benchmark.py` | Task-agnostic harness: `benchmark(fn)` scores any method's `run` over the dataset (accuracy + avg reward). |
-| `benchmark.py` | Sweeps the *local MLX baseline* across Qwen3-4B/8B/14B. Checkpoints per row; resumes. |
+| `benchmarks/generic_benchmark.py` | Task-agnostic harness: `benchmark(fn)` scores any method's `run` over the dataset (accuracy + avg reward). |
+| `benchmarks/benchmark_mlx.py` | Sweeps the *local MLX baseline* across Qwen3-4B/8B/14B. Checkpoints per row; resumes. |
 | `run_hscode.py` | MLX (Apple Silicon) baseline backend — `run_episode()`, manual `<tool_call>` XML parsing. |
 | `training_methods/grpo_hscode.py` | GRPO/QLoRA fine-tuning of Qwen3-4B on the env's reward (needs CUDA). A training-based method. |
 | `google_gpu/` | Google Cloud Batch recipe for running GPU jobs (A100) — infra for the training-based methods. See its own README. |
@@ -49,7 +49,7 @@ def run(row: dict) -> dict:
     return {"submitted": ..., "reward": ..., "correct": bool, "steps": int}
 ```
 
-Any method satisfying this contract is scorable by `generic_benchmark.py` with no changes to the harness. To benchmark a method, point the import in `generic_benchmark.py` at it and run `python generic_benchmark.py`.
+Any method satisfying this contract is scorable by `benchmarks/generic_benchmark.py` with no changes to the harness. To benchmark a method, point the import in `benchmarks/generic_benchmark.py` at it and run `python benchmarks/generic_benchmark.py`.
 
 Methods present today (each is a technique, not just an HS-code hack):
 
@@ -95,7 +95,7 @@ it in `data/` and link to it rather than pasting it in.
 
 **Benchmark any toolbox method (task-agnostic harness):**
 ```bash
-python generic_benchmark.py   # edit the import to select the method
+python benchmarks/generic_benchmark.py   # edit the import to select the method
 ```
 
 **Local MLX baseline, single episode (Apple Silicon):**
@@ -105,7 +105,7 @@ python run_hscode.py
 
 **Sweep the MLX baseline across Qwen3-4B/8B/14B (checkpoints, resumable):**
 ```bash
-python benchmark.py
+python benchmarks/benchmark_mlx.py
 ```
 
 **GRPO fine-tuning (training-based method, needs CUDA + BitsAndBytes):**

@@ -3,7 +3,7 @@
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
-from methods.raw_openai import run as run_once
+from inference_methods.raw_openai import run as run_once
 
 
 def run(row, n=5, model="gpt-5-nano", max_steps=15):

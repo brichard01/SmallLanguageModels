@@ -8,6 +8,10 @@ Infra for running GPU jobs on **1x NVIDIA A100 40GB** (`a2-highgpu-1g`) via
 - **GRPO training** — builds the project image and runs
   `training_methods/grpo_hscode.py` (GRPO/QLoRA fine-tuning of Qwen3-4B on the
   HS-code env reward), writing the trained adapter to a GCS bucket.
+- **Model evaluation** — builds a vLLM image and runs `benchmarks/eval_vllm.py`
+  to benchmark **any Hugging Face model** on the HS-code task. The model is a
+  runtime arg, so a new checkpoint needs no rebuild; completions are pushed to
+  the Hub named after the model.
 
 ## Files
 | File | Purpose |
@@ -22,6 +26,33 @@ Infra for running GPU jobs on **1x NVIDIA A100 40GB** (`a2-highgpu-1g`) via
 | `cloudbuild.grpo.yaml` | Builds `Dockerfile.grpo` with the **repo root** as context |
 | `batch_job_grpo.json` | Batch job spec — A100, 150 GB disk, 3 h cap, GCS output volume at `/mnt/disks/out` |
 | `submit_grpo.sh` | One command: build → push → ensure bucket → submit → show log commands |
+| **Model evaluation** | |
+| `Dockerfile.eval` | vLLM image (`vllm/vllm-openai` + `datasets`); bundles `hscode_env.py`, `benchmarks/eval_vllm.py`, `data/`. Model NOT baked in — passed at runtime |
+| `cloudbuild.eval.yaml` | Builds `Dockerfile.eval` with the **repo root** as context |
+| `batch_job_eval.json` | Batch job spec — A100, GCS output at `/mnt/disks/out`; `__MODEL__` / flag placeholders filled by the submit script |
+| `submit_eval.sh` | One command: build → push → ensure bucket → submit. `MODEL=` picks the checkpoint; `SKIP_BUILD=1` reuses the image for a new model |
+
+## Model evaluation quick start
+```bash
+# run from the repo root
+PROJECT_ID=<your-project> MODEL=Qwen/Qwen3-4B ./google_gpu/submit_eval.sh
+```
+Builds the vLLM image, runs the agentic HS-code loop over the dataset on an A100,
+and pushes the per-episode **completions** (full transcript + submitted code,
+reward, correct) to the Hub as `hscode-eval-<model>` under your namespace, with a
+backup at `gs://<PROJECT_ID>-grpo/eval-out`. Knobs (env vars):
+- `MODEL` — any HF model id (default `Qwen/Qwen3-4B`).
+- `SKIP_BUILD=1` — **evaluate a new model without rebuilding** the image.
+- `KEEP_REASONING=1` — keep `<think>` chain-of-thought in the saved transcripts
+  and re-fed context (default: strip it).
+- `NO_THINKING=1` — disable the model's thinking mode entirely.
+- `LIMIT=N` — first N rows only (`0` = whole dataset, the default).
+- `REPO=<name-or-namespace/name>` — override the HF dataset repo.
+- `QUANTIZATION=awq_marlin` — vLLM quantization for AWQ (or other) checkpoints.
+
+HF_TOKEN is injected at runtime from Secret Manager (secret `hf-token`); create
+it once (see the note in `submit_distill.sh`). Watch logs the same way as GRPO
+below.
 
 ## GRPO quick start
 ```bash

@@ -1,5 +1,13 @@
 import json
 import os
+import sys
+
+# Anchor to the repo root (parent of this benchmarks/ dir) so sibling-module
+# imports and the relative "data/..." paths resolve regardless of launch dir.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
+os.chdir(_REPO_ROOT)
+
 import mlx_lm
 import pandas as pd
 import run_hscode

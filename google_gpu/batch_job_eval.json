@@ -5,27 +5,41 @@
       "parallelism": 1,
       "taskSpec": {
         "maxRetryCount": 0,
-        "maxRunDuration": "5400s",
+        "maxRunDuration": "7200s",
         "computeResource": {
           "cpuMilli": 12000,
           "memoryMib": 83968
         },
+        "volumes": [
+          {
+            "gcs": { "remotePath": "__BUCKET__/eval-out" },
+            "mountPath": "/mnt/disks/out"
+          }
+        ],
         "runnables": [
           {
             "container": {
               "imageUri": "__IMAGE_URI__",
               "entrypoint": "python3",
               "commands": [
-                "-u", "distill_train.py",
-                "--dataset", "brichard01/hscode-distill-qwen3-32b",
-                "--output-dir", "/tmp/distill-train",
-                "--push-repo", "__PUSHREPO__",
-                "--epochs", "3",
-                "--max-len", "4096"
+                "-u", "eval_vllm.py",
+                "--model", "__MODEL__",
+                __REASONING_FLAG__
+                __THINKING_FLAG__
+                __QUANT_FLAG__
+                "--data", "data/benchmark_dataset.csv",
+                "--limit", "__LIMIT__",
+                "--repo-id", "__REPO__",
+                "--out", "/mnt/disks/out/__OUT__",
+                "--pool-size", "64",
+                "--gpu-mem-util", "0.90",
+                "--max-turns", "12",
+                "--max-model-len", "16384"
               ],
               "options": "--privileged"
             },
             "environment": {
+              "variables": { "HF_HUB_ENABLE_HF_TRANSFER": "1" },
               "secretVariables": {
                 "HF_TOKEN": "projects/329582102589/secrets/hf-token/versions/latest"
               }
