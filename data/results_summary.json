@@ -1,0 +1,37 @@
+{
+  "raw_openai": {
+    "n": 99,
+    "accuracy": 0.7272727272727273,
+    "avg_reward": 11.762626262626263,
+    "total_steps": 561,
+    "avg_steps": 5.666666666666667,
+    "errors": 0
+  },
+  "self_consistency": {
+    "elapsed_s": 1258.3637969493866,
+    "n": 99,
+    "accuracy": 0.7676767676767676,
+    "avg_reward": 12.631313131313131,
+    "total_steps": 2921,
+    "avg_steps": 29.505050505050505,
+    "errors": 0
+  },
+  "inspect_submit": {
+    "elapsed_s": 379.8498229980469,
+    "n": 99,
+    "accuracy": 0.7474747474747475,
+    "avg_reward": 0.0,
+    "total_steps": 574,
+    "avg_steps": 5.797979797979798,
+    "errors": 0
+  },
+  "self_refine": {
+    "elapsed_s": 1107.888190984726,
+    "n": 99,
+    "accuracy": 0.7676767676767676,
+    "avg_reward": 11.01010101010101,
+    "total_steps": 842,
+    "avg_steps": 8.505050505050505,
+    "errors": 0
+  }
+}

@@ -42,6 +42,10 @@ and pushes the per-episode **completions** (full transcript + submitted code,
 reward, correct) to the Hub as `hscode-eval-<model>` under your namespace, with a
 backup at `gs://<PROJECT_ID>-grpo/eval-out`. Knobs (env vars):
 - `MODEL` — any HF model id (default `Qwen/Qwen3-4B`).
+- `LORA` — HF id of a LoRA adapter to evaluate on top of `MODEL` (the base model
+  and rank are read from the adapter config; the adapter names the output repo).
+  Use this to benchmark a distill/GRPO fine-tune, e.g.
+  `LORA=brichard01/qwen3-4b-hscode-distill`.
 - `SKIP_BUILD=1` — **evaluate a new model without rebuilding** the image.
 - `KEEP_REASONING=1` — keep `<think>` chain-of-thought in the saved transcripts
   and re-fed context (default: strip it).

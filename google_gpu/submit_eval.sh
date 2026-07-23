@@ -29,7 +29,8 @@ IMAGE="${IMAGE:-eval-vllm}"
 BUCKET="${BUCKET:-${PROJECT_ID}-grpo}"
 HF_SECRET="${HF_SECRET:-hf-token}"
 LIMIT="${LIMIT:-0}"                 # 0 => whole dataset (no --limit passed)
-MODEL="${MODEL:-Qwen/Qwen3-4B}"
+MODEL="${MODEL:-Qwen/Qwen3-4B}"   # with LORA set, this is the BASE model
+LORA="${LORA:-}"                  # HF id of a LoRA adapter to eval on top of MODEL
 KEEP_REASONING="${KEEP_REASONING:-0}"
 NO_THINKING="${NO_THINKING:-0}"
 QUANTIZATION="${QUANTIZATION:-}"    # e.g. awq_marlin for AWQ checkpoints; empty => none
@@ -41,8 +42,10 @@ if [[ -z "${PROJECT_ID}" || "${PROJECT_ID}" == "(unset)" ]]; then
   exit 1
 fi
 
-# Derive an HF repo + a job name from the model id if not given explicitly.
-MODEL_TAG="$(echo "${MODEL##*/}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-' | sed 's/-*$//')"
+# Derive an HF repo + a job name from the run's identity: the adapter id when a
+# LoRA is being evaluated, otherwise the (base) model id.
+IDENTITY="${LORA:-${MODEL}}"
+MODEL_TAG="$(echo "${IDENTITY##*/}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-' | sed 's/-*$//')"
 REPO="${REPO:-hscode-eval-${MODEL_TAG}}"
 JOB="${JOB:-eval-${MODEL_TAG}-$(date +%s)}"
 OUT="${OUT:-${MODEL_TAG}}"
@@ -54,6 +57,7 @@ ROOT="$(cd "${HERE}/.." && pwd)"
 
 # Batch commands array: expand the two boolean flags to either the flag (with a
 # trailing comma, since more args follow) or nothing.
+LORA_FLAG="";      [[ -n "${LORA}" ]]                && LORA_FLAG="\"--lora\", \"${LORA}\","
 REASONING_FLAG=""; [[ "${KEEP_REASONING}" == "1" ]] && REASONING_FLAG='"--keep-reasoning",'
 THINKING_FLAG="";  [[ "${NO_THINKING}" == "1" ]]    && THINKING_FLAG='"--no-thinking",'
 QUANT_FLAG="";     [[ -n "${QUANTIZATION}" ]]        && QUANT_FLAG="\"--quantization\", \"${QUANTIZATION}\","
@@ -98,6 +102,7 @@ fi
 sed -e "s#__IMAGE_URI__#${IMAGE_URI}#g" \
     -e "s#__BUCKET__#${BUCKET}#g" \
     -e "s#__MODEL__#${MODEL}#g" \
+    -e "s#__LORA_FLAG__#${LORA_FLAG}#g" \
     -e "s#__REPO__#${REPO}#g" \
     -e "s#__REASONING_FLAG__#${REASONING_FLAG}#g" \
     -e "s#__THINKING_FLAG__#${THINKING_FLAG}#g" \

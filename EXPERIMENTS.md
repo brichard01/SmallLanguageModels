@@ -238,3 +238,34 @@ Keep this table in sync as methods are added and benchmarked.
   convention hurt here. Worth re-testing on any new agentic bench before deciding.
   Caveat: AWQ Qwen3-4B at 42% is well below the gpt-5-nano agentic baseline (72%);
   this pair isolates the reasoning-retention axis, not absolute SLM quality.
+
+### 2026-07-23 — Distill LoRA eval: `qwen3-4b-hscode-distill` (reasoning kept)
+
+- **Method:** `benchmarks/eval_vllm.py` with new `--lora` support — evaluates a
+  LoRA adapter on top of its base model (base + rank read from the adapter
+  config; tokenizer/chat-template taken from the adapter repo). Run on the A100
+  via `LORA=... KEEP_REASONING=1 ./google_gpu/submit_eval.sh`.
+- **Setup:** adapter `brichard01/qwen3-4b-hscode-distill` (rank 16) on base
+  `Qwen/Qwen3-4B` (**bf16**, not quantized), full 99-row dataset, reasoning kept,
+  thinking on, temp 0.7 / top-p 0.8, max-turns 12, max-model-len 16384.
+- **Result:** accuracy **52.5%** (52/99), avg reward **10.29**. Completions:
+  `brichard01/hscode-eval-qwen3-4b-hscode-distill`.
+- **Comparison (all keep-reasoning, 99 rows):**
+
+  | Model | Accuracy | Avg reward |
+  |---|---|---|
+  | Qwen3-4B-AWQ base (reasoning stripped) | 28.3% | 5.98 |
+  | Qwen3-4B-AWQ base (reasoning kept)     | 42.4% | 8.05 |
+  | **Qwen3-4B distill LoRA (reasoning kept)** | **52.5%** | **10.29** |
+
+- **Verdict:** the distillation fine-tune adds **+10.1 acc pts** over the base
+  model (both reasoning-kept). First evidence a trained method moves the needle on
+  this bench. The distill teacher (Qwen3-32B-AWQ) scored 64.6% here, so the 4B
+  student recovers a good chunk of the teacher's edge from off-policy KD alone.
+- **Caveats:** (1) not a perfectly matched base — the LoRA runs on **bf16**
+  Qwen3-4B while the base baseline used the **AWQ 4-bit** build, so some of the
+  gap may be quantization, not fine-tuning; a bf16-base no-adapter run would
+  isolate it. (2) Still short of the gpt-5-nano agentic baseline (72%).
+- **Notes for the next task:** `--lora` makes evaluating any distill/GRPO adapter
+  a one-liner; pair every training method with an eval run on the same bench.
+  Next: bf16 base control run, and eval the GRPO adapter the same way.

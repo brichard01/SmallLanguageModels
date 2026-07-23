@@ -21,10 +21,17 @@ context re-fed to the model on the next turn (this matches the usual multi-turn
 convention of not carrying prior chain-of-thought forward). When kept, the
 reasoning stays in the conversation verbatim.
 
+LoRA adapters (e.g. the distill/GRPO outputs) are evaluated with `--lora <hf-id>`:
+the base model and rank are read from the adapter config, the tokenizer/chat
+template are taken from the adapter repo, and the adapter names the run.
+
 Run (on a CUDA box / the google_gpu A100), from the repo root:
     python -m benchmarks.eval_vllm \
         --model Qwen/Qwen3-4B --limit 20 \
         --repo-id <user>/hscode-eval-qwen3-4b
+    # a fine-tuned LoRA adapter:
+    python -m benchmarks.eval_vllm \
+        --lora <user>/qwen3-4b-hscode-distill --keep-reasoning
 """
 
 import argparse
@@ -177,7 +184,7 @@ def finalize_episode(state):
 
 
 def run_pool(llm, tokenizer, sampling_params, rows, keep_reasoning, enable_thinking,
-             max_turns, pool_size, max_model_len):
+             max_turns, pool_size, max_model_len, lora_request=None):
     """Batched agentic rollout. Keeps up to `pool_size` episodes active and issues
     ONE `llm.generate([...])` per round over all active episodes' next-turn
     prompts, so vLLM continuous-batches them. Finished episodes are refilled from
@@ -220,7 +227,8 @@ def run_pool(llm, tokenizer, sampling_params, rows, keep_reasoning, enable_think
             break
 
         try:
-            outs = llm.generate(prompts, sampling_params, use_tqdm=False)
+            outs = llm.generate(prompts, sampling_params, use_tqdm=False,
+                                lora_request=lora_request)
         except Exception as e:
             print(f"generate failed ({e!r}); keeping {n_done} finished episodes, "
                   f"dropping {len(batch)} in-flight", flush=True)
@@ -248,7 +256,15 @@ def default_repo_name(model: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser(description="Evaluate a Hugging Face model on the HS-code task with vLLM.")
-    ap.add_argument("--model", required=True, help="Hugging Face model id (e.g. Qwen/Qwen3-4B)")
+    ap.add_argument("--model", default=None,
+                    help="Hugging Face model id (e.g. Qwen/Qwen3-4B). With --lora this is "
+                         "the BASE model; if omitted it is read from the adapter's config.")
+    ap.add_argument("--lora", default=None,
+                    help="Hugging Face id (or local path) of a LoRA adapter to evaluate on "
+                         "top of --model. The adapter's repo name identifies the run when "
+                         "naming the completions dataset.")
+    ap.add_argument("--max-lora-rank", type=int, default=None,
+                    help="override the LoRA rank (default: read from the adapter config)")
     ap.add_argument("--data", default="data/benchmark_dataset.csv")
     ap.add_argument("--out", default=None, help="local save_to_disk dir (default: data/eval_<model>)")
     ap.add_argument("--repo-id", default=None,
@@ -275,29 +291,58 @@ def main():
     ap.add_argument("--limit", type=int, default=None, help="only first N rows (smoke test)")
     args = ap.parse_args()
 
+    if not args.model and not args.lora:
+        ap.error("provide --model (a full model) and/or --lora (an adapter)")
+
     import time
     # Heavy deps imported lazily so `--help` works without a GPU box.
     from vllm import LLM, SamplingParams
+    from vllm.lora.request import LoRARequest
     from transformers import AutoTokenizer
     from datasets import Dataset
+
+    # Resolve LoRA: read the base model + rank from the adapter config (unless
+    # overridden), and load the tokenizer from the adapter repo so its (possibly
+    # fine-tuned) chat template is used. The adapter id names the run.
+    base_model, lora_rank = args.model, args.max_lora_rank
+    tokenizer_src = args.model
+    lora_local_path = None
+    if args.lora:
+        # Download the adapter to a local dir (LoRARequest wants a path) and read
+        # its base model + rank. Local paths pass through unchanged.
+        if os.path.isdir(args.lora):
+            lora_local_path = args.lora
+        else:
+            from huggingface_hub import snapshot_download
+            lora_local_path = snapshot_download(args.lora)
+        adapter_cfg = json.load(open(os.path.join(lora_local_path, "adapter_config.json")))
+        base_model = args.model or adapter_cfg.get("base_model_name_or_path")
+        lora_rank = args.max_lora_rank or int(adapter_cfg.get("r", 16))
+        tokenizer_src = lora_local_path  # adapter repo ships tokenizer + chat_template
+    eval_model = args.lora or args.model  # identity used for naming/summary
 
     df = normalize_dataset(args.data)
     if args.limit:
         df = df.head(args.limit)
     rows = df.to_dict("records")
-    print(f"Model: {args.model}")
+    print(f"Model: {eval_model}" + (f"  (LoRA on base {base_model}, rank {lora_rank})" if args.lora else ""))
     print(f"Loaded {len(rows)} rows from {args.data}")
     print(f"keep_reasoning={args.keep_reasoning}  thinking={not args.no_thinking}")
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_src)
     llm_kwargs = dict(
-        model=args.model,
+        model=base_model,
         max_model_len=args.max_model_len,
         gpu_memory_utilization=args.gpu_mem_util,
         enforce_eager=False,
     )
     if args.quantization:
         llm_kwargs["quantization"] = args.quantization
+    lora_request = None
+    if args.lora:
+        llm_kwargs["enable_lora"] = True
+        llm_kwargs["max_lora_rank"] = lora_rank
+        lora_request = LoRARequest("adapter", 1, lora_local_path)
     llm = LLM(**llm_kwargs)
     sampling_params = SamplingParams(
         temperature=args.temperature,
@@ -313,27 +358,28 @@ def main():
         max_turns=args.max_turns,
         pool_size=args.pool_size,
         max_model_len=args.max_model_len,
+        lora_request=lora_request,
     )
     elapsed = time.time() - t0
 
     n = max(len(rows), 1)
     accuracy = n_correct / n
     avg_reward = sum(c["reward"] for c in completions) / max(len(completions), 1)
-    print(f"\n=== {args.model} ===")
+    print(f"\n=== {eval_model} ===")
     print(f"Accuracy:   {n_correct}/{len(rows)} = {accuracy:.1%}")
     print(f"Avg reward: {avg_reward:.2f}")
     print(f"Wall-clock: {elapsed:.1f}s ({len(rows) / elapsed:.2f} episodes/s)")
 
     # Stamp per-row model + a run-level summary onto every completion so the
     # dataset is self-describing when compared across models later.
-    summary = {"model": args.model, "n": len(rows), "accuracy": accuracy,
-               "avg_reward": avg_reward, "keep_reasoning": args.keep_reasoning,
-               "thinking": not args.no_thinking}
+    summary = {"model": eval_model, "base_model": base_model, "lora": args.lora,
+               "n": len(rows), "accuracy": accuracy, "avg_reward": avg_reward,
+               "keep_reasoning": args.keep_reasoning, "thinking": not args.no_thinking}
     for c in completions:
-        c["model"] = args.model
+        c["model"] = eval_model
     ds = Dataset.from_list(completions)
 
-    out = args.out or f"data/eval_{default_repo_name(args.model).replace('hscode-eval-', '')}"
+    out = args.out or f"data/eval_{default_repo_name(eval_model).replace('hscode-eval-', '')}"
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     ds.save_to_disk(out)
     with open(os.path.join(out, "summary.json"), "w") as f:
@@ -342,7 +388,7 @@ def main():
 
     repo_id = args.repo_id
     if repo_id is None:
-        repo_id = default_repo_name(args.model)
+        repo_id = default_repo_name(eval_model)
     if repo_id:  # '' skips the push
         if "/" not in repo_id:
             from huggingface_hub import whoami

@@ -24,6 +24,7 @@
               "commands": [
                 "-u", "eval_vllm.py",
                 "--model", "__MODEL__",
+                __LORA_FLAG__
                 __REASONING_FLAG__
                 __THINKING_FLAG__
                 __QUANT_FLAG__
