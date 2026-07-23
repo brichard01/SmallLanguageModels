@@ -30,7 +30,7 @@ RUN pip install --no-cache-dir --upgrade \
 # flattened into /app so it can `from hscode_env import ...` and read data/ by
 # relative path, exactly as it does locally.
 WORKDIR /app
-COPY hscode_env.py training_methods/grpo_hscode.py ./
+COPY hscode_env.py training_methods/grpo_hscode.py training_methods/distill_train.py ./
 COPY data/harmonized_system_by_parent.csv data/sections_prepared.csv data/benchmark_dataset.csv ./data/
 
 CMD ["python", "-u", "grpo_hscode.py"]

@@ -1,0 +1,21 @@
+# Teacher-distillation dataset generation with Qwen3-32B-AWQ on 1x A100 40GB.
+# The official vLLM image already ships a matched torch + CUDA + AWQ kernels and
+# a recent transformers (Qwen3-capable), so we only add datasets on top.
+FROM vllm/vllm-openai:latest
+
+ENV PYTHONUNBUFFERED=1
+ENV HF_HUB_ENABLE_HF_TRANSFER=1
+
+RUN pip install --no-cache-dir "datasets>=2.20" "hf_transfer"
+
+# Build context is the repo root (see cloudbuild.distill.yaml). Flatten the
+# script + env into /app so `from hscode_env import ...` and the data/ relative
+# paths work, exactly as they do locally.
+WORKDIR /app
+COPY hscode_env.py training_methods/distill_generate.py ./
+COPY data/harmonized_system_by_parent.csv data/sections_prepared.csv data/benchmark_dataset.csv ./data/
+
+# vLLM's image sets an api-server entrypoint; clear it so the Batch job's
+# command (python distill_generate.py ...) runs instead.
+ENTRYPOINT []
+CMD ["python3", "-u", "distill_generate.py", "--help"]

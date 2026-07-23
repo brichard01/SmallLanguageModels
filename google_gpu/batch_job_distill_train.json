@@ -1,0 +1,57 @@
+{
+  "taskGroups": [
+    {
+      "taskCount": 1,
+      "parallelism": 1,
+      "taskSpec": {
+        "maxRetryCount": 0,
+        "maxRunDuration": "5400s",
+        "computeResource": {
+          "cpuMilli": 12000,
+          "memoryMib": 83968
+        },
+        "volumes": [
+          {
+            "gcs": { "remotePath": "__BUCKET__/distill-train-out" },
+            "mountPath": "/mnt/disks/out"
+          }
+        ],
+        "runnables": [
+          {
+            "container": {
+              "imageUri": "__IMAGE_URI__",
+              "entrypoint": "python3",
+              "commands": [
+                "-u", "distill_train.py",
+                "--dataset", "brichard01/hscode-distill-qwen3-32b",
+                "--limit", "__LIMIT__",
+                "--grad-accum", "2",
+                "--output-dir", "/mnt/disks/out/distill-train",
+                "--max-len", "4096"
+              ],
+              "options": "--privileged"
+            },
+            "environment": {
+              "secretVariables": {
+                "HF_TOKEN": "projects/329582102589/secrets/hf-token/versions/latest"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "allocationPolicy": {
+    "instances": [
+      {
+        "installGpuDrivers": true,
+        "policy": {
+          "machineType": "a2-highgpu-1g",
+          "provisioningModel": "STANDARD",
+          "bootDisk": { "sizeGb": 120 }
+        }
+      }
+    ]
+  },
+  "logsPolicy": { "destination": "CLOUD_LOGGING" }
+}

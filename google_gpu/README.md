@@ -1,17 +1,46 @@
-# Hello A100 on Google Cloud Batch
+# A100 jobs on Google Cloud Batch
 
-Runs a PyTorch "hello world" on **1x NVIDIA A100 40GB** using the
-`a2-highgpu-1g` machine type, via **Cloud Batch** (managed, no VM to babysit).
+Infra for running GPU jobs on **1x NVIDIA A100 40GB** (`a2-highgpu-1g`) via
+**Cloud Batch** (managed, no VM to babysit). Two jobs live here:
+
+- **Hello-world** — a cheap (~2 min, ~$0.25) sanity check that the A100 path
+  works end to end.
+- **GRPO training** — builds the project image and runs
+  `training_methods/grpo_hscode.py` (GRPO/QLoRA fine-tuning of Qwen3-4B on the
+  HS-code env reward), writing the trained adapter to a GCS bucket.
 
 ## Files
 | File | Purpose |
 |---|---|
+| **Hello-world** | |
 | `hello_gpu.py` | Torch script: prints GPU info, runs an 8192² matmul, verifies the result |
 | `Dockerfile` | Wraps the script in the official `pytorch/pytorch` CUDA image |
 | `batch_job.json` | Batch job spec — `a2-highgpu-1g` + `installGpuDrivers: true` |
 | `submit.sh` | One command: build → push → submit → show log commands |
+| **GRPO training** | |
+| `Dockerfile.grpo` | Project image: torch 2.6/cu124 + transformers/peft/trl(main)/bitsandbytes, bundles `hscode_env.py`, `training_methods/grpo_hscode.py`, `data/` |
+| `cloudbuild.grpo.yaml` | Builds `Dockerfile.grpo` with the **repo root** as context |
+| `batch_job_grpo.json` | Batch job spec — A100, 150 GB disk, 3 h cap, GCS output volume at `/mnt/disks/out` |
+| `submit_grpo.sh` | One command: build → push → ensure bucket → submit → show log commands |
 
-## Quick start
+## GRPO quick start
+```bash
+# run from the repo root
+PROJECT_ID=<your-project> ./google_gpu/submit_grpo.sh
+```
+Builds the image, submits the A100 job, and writes the LoRA adapter to
+`gs://<PROJECT_ID>-grpo/grpo-out`. Override defaults via env vars: `REGION`,
+`REPO`, `IMAGE`, `JOB`, `BUCKET`. It trains on `data/benchmark_dataset.csv` by
+default (`GRPO_DATA` in the job spec); point that at the full dataset for a real
+run. Watch it with (note: container stdout lands in `batch_task_logs`, and Batch
+leaves the `job_id` label blank on those lines, so filter by log name):
+```bash
+gcloud logging read 'logName="projects/<PROJECT_ID>/logs/batch_task_logs"' \
+  --project=<PROJECT_ID> --freshness=30m --limit=50 --order=desc \
+  --format="value(timestamp,textPayload)"
+```
+
+## Hello-world quick start
 ```bash
 export PROJECT_ID=$(gcloud config get-value project)   # or set it explicitly
 cd google_gpu
