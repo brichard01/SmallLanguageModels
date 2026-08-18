@@ -99,6 +99,14 @@ if __name__ == "__main__":
         "section": "K",
     }
 
+    test = {
+            "product_description": "Fresh apples",
+            "answer": "080810",
+            "hs_2": "08",
+            "hs_4": "0808",
+            "section": "B",
+        }
+
     result = run_episode(
         product_description=test["product_description"],
         answer=test["answer"],

@@ -12,11 +12,20 @@ random.seed(42)
 
 
 def reward_env(environments, **kwargs):
+    # Instrumented to diagnose "always bad reward": for each rollout env, show
+    # whether the gold answer reached reset (grading can award +10 at all),
+    # whether the episode actually reached submit_final_code, and how many tool
+    # calls it made. A high call count with submitted=None => the trajectory was
+    # truncated before submitting (raise max_completion_length / drop thinking).
     rewards = []
     for env in environments:
-        reward = env.reward
-        rewards.append(reward)
-    print(rewards)
+        rewards.append(env.reward)
+        print({
+            "gold": env.data.get("answer"),
+            "submitted": env.submitted,
+            "calls": env.total_calls,
+            "reward": env.reward,
+        }, flush=True)
     return rewards
 
 
@@ -113,7 +122,10 @@ if __name__ == "__main__":
         gradient_accumulation_steps=8,
         num_generations=4,
 
-        max_completion_length=2048,
+        # Agentic rollouts concatenate every turn's <think> + tool call, so the
+        # whole trajectory must fit here. 2048 truncated multi-turn thinking
+        # episodes before they could submit; give them real room.
+        max_completion_length=8192,
 
         learning_rate=5e-6,
         beta=0.02,
@@ -126,7 +138,15 @@ if __name__ == "__main__":
         save_steps=100,
         num_train_epochs=1,
 
-        use_vllm=False,
+        # vLLM generation (colocated on the same A100) — HF generate was the
+        # bottleneck: multi-turn 8192-token rollouts x num_generations were taking
+        # ~15 min for the first optimizer step. Colocate shares the GPU with
+        # training; keep util modest so the 4-bit policy + optimizer states fit,
+        # and size the engine context to prompt + max_completion_length.
+        use_vllm=True,
+        vllm_mode="colocate",
+        vllm_gpu_memory_utilization=0.3,
+        vllm_max_model_length=12288,
         report_to="none",
 
         chat_template_kwargs={"enable_thinking": True}
