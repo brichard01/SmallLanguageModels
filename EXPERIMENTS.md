@@ -269,3 +269,57 @@ Keep this table in sync as methods are added and benchmarked.
 - **Notes for the next task:** `--lora` makes evaluating any distill/GRPO adapter
   a one-liner; pair every training method with an eval run on the same bench.
   Next: bf16 base control run, and eval the GRPO adapter the same way.
+
+### 2026-08-19 — Full inference-toolbox sweep on Dataiku DSS (gpt-5-nano)
+
+- **Method / technique:** all four inference methods (`raw_openai`,
+  `self_consistency`, `self_refine`, `inspect_submit`) ported to the DSS LLM Mesh
+  and run as DSS agents inside project `SLMBAPTISTE`. The techniques live in a
+  shared project library (mirrored in this repo at
+  `dss_library/python/slm_toolbox/`); each DSS agent is a three-line wrapper, so
+  a method is defined once and reused by the flow, Agent Hub and agent reviews.
+- **Setup:** `gpt-5-nano` for every method and for the SLM reference; `gpt-5` for
+  the frontier reference. Full 99-row `benchmark_dataset` (DSS
+  `benchmark_cases`). n=5 for self-consistency, max_iters=3 for self-refine,
+  max_steps 15 (30 for submit-then-verify). One run per method, no repeats.
+  Wall-clock: ~15 min for all six branches (DSS runs rows ~30-way concurrent).
+
+| Technique | Accuracy | No answer | Avg tool calls |
+|---|---|---|---|
+| **M3 — Self-Refine** | **87.9%** | 3.0% | 9.2 |
+| M4 — Submit-then-Verify | 80.8% | 3.0% | 8.0 |
+| M2 — Self-Consistency | 78.8% | 1.0% | 33.0 |
+| M1 — Baseline (ReAct) | 70.7% | 13.1% | 6.7 |
+| V0a — gpt-5, no tools | 63.6% | 0.0% | — |
+| V0b — gpt-5-nano, no tools | 11.1% | 1.0% | — |
+
+- **Baseline compared to:** M1 ReAct at 70.7% (consistent with the 72% recorded
+  for the gpt-5-nano agentic baseline in earlier entries).
+- **Verdict:**
+  - **Scaffolding beats model size.** Same small model: 11.1% → 70.7% purely from
+    the hierarchy + the no-hallucinated-codes constraint. +59.6 pts, no training.
+  - **Self-Refine is the best buy:** +17.2 pts over baseline for 1.4× tool calls.
+  - **Self-Consistency is the worst buy:** +8.1 pts for **4.9×** tool calls. The
+    five episodes share a prompt and a hierarchy, so they tend to make the *same*
+    systematic error — voting can't fix a correlated mistake.
+  - **Submit-then-Verify is the sleeper:** +10.1 pts for only 1.2× tool calls.
+    Nearly Self-Consistency's gain at a quarter of the cost.
+  - **The baseline's dominant failure is abstention, not error.** M1 returns no
+    code at all on 13.1% of cases (wanders, hits the step limit). Every
+    second-pass method drops that to ~3%. Roughly half of M3's gain over M1 is
+    just *finishing*.
+- **Transferability / notes:**
+  - Track a **no-answer rate** alongside accuracy on every future method. It was
+    invisible in the old harness and it explains most of the baseline's gap here.
+  - Self-consistency's weakness should generalise to any task where all samples
+    share one tool surface and one prompt — expect it to pay off only where the
+    failure mode is *variance*, not *bias*. Prefer diversity of prompt or entry
+    point over more samples of the same thing.
+  - A cheap forced re-inspection (M4) got most of the benefit of the expensive
+    method. Try that shape first on the next task.
+  - `avg_env_reward` is not a ranking signal — it charges per tool call, so it
+    penalises the exploration that raises accuracy. Kept for GRPO, ignored here.
+  - Gotcha worth remembering: the model sometimes returns `hs_code` as a JSON
+    *number*, silently dropping the leading zero (`070960` → `70960.0`). Any
+    scoring layer comparing codes as strings must normalise first, and DSS will
+    re-infer such a column as `double` unless the output schema pins it to string.
